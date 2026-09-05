@@ -1,7 +1,7 @@
 // boot_ctrl.v — identico a Parte 11 do tutorial original na logica do
 // motor SPI e do sequenciador; a unica mudanca real e' a largura de
-// ram_addr (9 bits agora, porque a RAM alvo e' de 512 palavras em vez
-// de 1024). O formato de dados na Flash continua o mesmo: 2 bytes de
+// ram_addr (10 bits, porque a RAM alvo e' de 1024 palavras). O formato
+// de dados na Flash continua o mesmo: 2 bytes de
 // cabecalho (tamanho em PALAVRAS de 16 bits, little-endian) seguidos
 // do programa, palavra por palavra, little-endian.
 module boot_ctrl (
@@ -11,7 +11,7 @@ module boot_ctrl (
     output reg  spi_sck,
     output reg  spi_mosi,
     input  wire spi_miso,
-    output reg  [8:0]  ram_addr,
+    output reg  [9:0]  ram_addr,
     output reg  [15:0] ram_wdata,
     output reg  ram_we,
     output reg  cpu_rst    // fica em 1 (CPU parada) ate a copia terminar
@@ -97,7 +97,7 @@ module boot_ctrl (
                 S_DATA_LO_W: if (done) begin low_byte <= rx_byte; state <= S_DATA_HI; end
                 S_DATA_HI: begin tx_byte <= 8'h00; start <= 1; state <= S_DATA_HI_W; end
                 S_DATA_HI_W: if (done) begin
-                    ram_addr  <= count[8:0];
+                    ram_addr  <= count[9:0];
                     ram_wdata <= {rx_byte, low_byte};  // palavra completa de 16 bits
                     ram_we    <= 1;
                     if (count + 1 >= word_count) begin

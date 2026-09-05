@@ -2,7 +2,7 @@
 // Sem mudancas: este modulo so ve prog_rx/prog_tx, que continuam sendo
 // 2 sinais dedicados independente de quantos GPIOs de uso geral existem.
 module uart #(
-    parameter CLK_FREQ_HZ = 100_000_000,
+    parameter CLK_FREQ_HZ = 16_000_000,
     parameter BAUD        = 115200
 )(
     input  wire clk,

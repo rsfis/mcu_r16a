@@ -1,12 +1,5 @@
 // tt_um_rianfiscina.v — wrapper universal de simulacao/GDS
 //
-// Este wrapper e' 100% generico: ele so faz a ponte de pinos entre o
-// padrao Tiny Tapeout (ui_in/uo_out/uio_in/uio_out/uio_oe) e o `top`
-// do projeto. Ele NAO conhece o conteudo do programa que vai rodar --
-// o boot sempre acontece do mesmo jeito (via boot_ctrl + SPI flash),
-// entao trocar o "program.hex" usado pelo testbench e' suficiente pra
-// rodar qualquer programa novo, sem precisar tocar neste arquivo.
-//
 // Mapa de pinos (combina com o que tb.v espera):
 //   ui_in[0]  = prog_rx   (entrada da UART de "boot/depuracao")
 //   ui_in[1]  = spi_miso  (linha MISO vinda da flash SPI simulada)
@@ -22,14 +15,6 @@
 //   passados direto para/de gpio.v via top.v (uio[4] e' o LED usado
 //   nos programas de exemplo, mas isso e' decisao do software, nao
 //   do wrapper).
-//
-// Sinais de depuracao (dbg_*): sao so "assign" (fios), nao mudam
-// nenhuma logica funcional -- servem apenas para aparecerem juntos,
-// de forma plana, no wave (GTKWave/VCD), sem precisar descer manualmente
-// varios niveis de hierarquia (tb_full.user_project.u_top.u_cpu....).
-// Como o testbench usa $dumpvars(0, tb_full), TODOS os sinais internos
-// ja sao gravados no .vcd de qualquer forma; estes fios so facilitam
-// achar os mais uteis rapidamente.
 module tt_um_rianfiscina (
     input  wire [7:0] ui_in,    // entradas dedicadas
     output wire [7:0] uo_out,   // saidas dedicadas
@@ -80,14 +65,14 @@ module tt_um_rianfiscina (
     wire [15:0] dbg_boot_wordcnt  = u_top.u_boot.word_count; // quantas palavras o cabecalho da flash informou
 
     // Estado da CPU
-    wire [8:0]  dbg_cpu_pc      = u_top.u_cpu.pc;
+    wire [9:0]  dbg_cpu_pc      = u_top.u_cpu.pc;
     wire [3:0]  dbg_cpu_state   = u_top.u_cpu.state;
     wire [7:0]  dbg_cpu_opcode  = u_top.u_cpu.opcode;
     wire [3:0]  dbg_cpu_regdst  = u_top.u_cpu.reg_dst;
     wire [3:0]  dbg_cpu_regsrc  = u_top.u_cpu.reg_src;
     wire        dbg_cpu_halted  = u_top.u_cpu.halted;
     wire        dbg_cpu_flagz   = u_top.u_cpu.flag_z;
-    wire [8:0]  dbg_mem_addr    = u_top.cpu_mem_addr;
+    wire [9:0]  dbg_mem_addr    = u_top.cpu_mem_addr;
     wire [15:0] dbg_mem_wdata   = u_top.cpu_mem_wdata;
     wire [15:0] dbg_mem_rdata   = u_top.mem_rdata;
     wire        dbg_mem_we      = u_top.cpu_mem_we;

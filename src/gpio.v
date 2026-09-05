@@ -24,7 +24,7 @@ module gpio #(
 )(
     input  wire clk,
     input  wire rst,
-    input  wire [8:0]  addr,      // 9 bits (RAM de 512 palavras)
+    input  wire [9:0]  addr,      // 10 bits (RAM de 1024 palavras)
     input  wire [15:0] wdata,
     input  wire we,
     output reg  [15:0] rdata,
@@ -32,11 +32,11 @@ module gpio #(
     output wire [NPINS-1:0] pad_out,  // valor a dirigir no pino (quando em modo saida)
     output wire [NPINS-1:0] pad_oe    // 1 = pino em modo saida (direction/output-enable)
 );
-    localparam ADDR_DIR    = 9'h1F0;
-    localparam ADDR_DATA   = 9'h1F1;
-    // 0x1F2 livre (pull-up removido -- use resistor externo na placa)
-    localparam ADDR_PWM_EN = 9'h1F3;
-    localparam ADDR_DUTY0  = 9'h1F4; // 0x1F4..0x1FB = 8 enderecos, 1 por pino
+    localparam ADDR_DIR    = 10'h3F0;
+    localparam ADDR_DATA   = 10'h3F1;
+    // 0x3F2 livre (pull-up removido -- use resistor externo na placa)
+    localparam ADDR_PWM_EN = 10'h3F3;
+    localparam ADDR_DUTY0  = 10'h3F4; // 0x3F4..0x3FB = 8 enderecos, 1 por pino
 
     reg [NPINS-1:0] dir_reg, data_reg, pwm_en_reg;
     reg [7:0] duty [0:NPINS-1];

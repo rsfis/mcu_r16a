@@ -11,7 +11,7 @@ module tb_full ();
 
     // ---- clock e reset ----
     reg clk = 0;
-    always #5 clk = ~clk;   // 100 MHz "nominal" (so importa se voce nao mexer no CLK_FREQ_HZ)
+    always #5 clk = ~clk;   // 16 MHz "nominal" (so importa se voce nao mexer no CLK_FREQ_HZ)
 
     reg rst_n = 0;
     reg ena   = 1;

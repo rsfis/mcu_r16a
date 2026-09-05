@@ -1,26 +1,25 @@
 // top.v — v4
 //
 // Mudancas em relacao a Parte 11 do tutorial original:
-//   - RAM agora e' 512 palavras (nao 1024) -- reg [15:0] ram [0:511].
-//   - mem_addr e' 9 bits (nao 10) em toda a hierarquia.
+//   - RAM e' 1024 palavras -- reg [15:0] ram [0:1023] (2KB).
+//   - mem_addr e' 10 bits em toda a hierarquia.
 //   - gpio_pad deixou de ser "inout"; agora sao 3 sinais separados
 //     (gpio_pad_in/out/oe) que casam direto com o modelo
 //     ui_in/uo_out/uio_* do wrapper Tiny Tapeout (ver tt_um_*.v).
-//   - Novo mapa de enderecos de I/O (precisou mudar porque o espaco de
-//     enderecos encolheu de 1024 pra 512 palavras). Segue o mesmo
-//     "deslocamento a partir do topo" do mapa original:
+//   - Mapa de enderecos de I/O no topo do espaco de 1024 palavras
+//     ("deslocamento a partir do topo", mesmo padrao de antes):
 //
-//       0x1EE  UART_STATUS   (bit0 = byte novo chegou)
-//       0x1EF  UART_DATA     (leitura=byte recebido / escrita=byte a transmitir)
-//       0x1F0  GPIO_DIR      (bit=1 -> pino em modo saida)
-//       0x1F1  GPIO_DATA     (leitura reflete o pino de verdade se for entrada)
-//       0x1F2  (livre -- sem pull-up interno, use resistor externo)
-//       0x1F3  GPIO_PWM_EN
-//       0x1F4..0x1FB  GPIO_PWM_DUTY[0..7]  (8 GPIOs)
-//       0x1FC..0x1FF  (reservado / nao usado)
+//       0x3EE  UART_STATUS   (bit0 = byte novo chegou)
+//       0x3EF  UART_DATA     (leitura=byte recebido / escrita=byte a transmitir)
+//       0x3F0  GPIO_DIR      (bit=1 -> pino em modo saida)
+//       0x3F1  GPIO_DATA     (leitura reflete o pino de verdade se for entrada)
+//       0x3F2  (livre -- sem pull-up interno, use resistor externo)
+//       0x3F3  GPIO_PWM_EN
+//       0x3F4..0x3FB  GPIO_PWM_DUTY[0..7]  (8 GPIOs)
+//       0x3FC..0x3FF  (reservado / nao usado)
 //
-//     Programa e dados do usuario: enderecos 0x000..0x1ED (494 palavras
-//     uteis = 247 instrucoes no formato compacto de 2 palavras/instrucao).
+//     Programa e dados do usuario: enderecos 0x000..0x3ED (1006 palavras
+//     uteis = 503 instrucoes no formato compacto de 2 palavras/instrucao).
 module top (
     input  wire clk,
     input  wire rst,
@@ -34,16 +33,16 @@ module top (
     output wire spi_mosi,
     input  wire spi_miso
 );
-    wire [8:0]  cpu_mem_addr;
+    wire [9:0]  cpu_mem_addr;
     wire [15:0] cpu_mem_wdata, mem_rdata;
     wire cpu_mem_we;
 
     wire boot_cpu_rst;
-    wire [8:0]  boot_ram_addr;
+    wire [9:0]  boot_ram_addr;
     wire [15:0] boot_ram_wdata;
     wire boot_ram_we;
 
-    reg [15:0] ram [0:511];   // 1KB = 512 palavras de 16 bits
+    reg [15:0] ram [0:1023];   // 2KB = 1024 palavras de 16 bits
 
     boot_ctrl u_boot(
         .clk(clk), .rst(rst),
@@ -56,7 +55,7 @@ module top (
 
     // Enquanto o boot esta rodando (boot_cpu_rst=1), quem escreve na RAM e' a boot_ctrl.
     // Depois que termina, quem escreve e' a CPU normalmente.
-    wire [8:0]  mem_addr  = boot_cpu_rst ? boot_ram_addr  : cpu_mem_addr;
+    wire [9:0]  mem_addr  = boot_cpu_rst ? boot_ram_addr  : cpu_mem_addr;
     wire [15:0] mem_wdata = boot_cpu_rst ? boot_ram_wdata : cpu_mem_wdata;
     wire        mem_we    = boot_cpu_rst ? boot_ram_we    : cpu_mem_we;
 
@@ -64,9 +63,9 @@ module top (
               .mem_wdata(cpu_mem_wdata), .mem_rdata(mem_rdata),
               .mem_we(cpu_mem_we), .halted(), .flag_z());
 
-    wire sel_uart_status = (mem_addr == 9'h1EE);
-    wire sel_uart_data   = (mem_addr == 9'h1EF);
-    wire sel_gpio        = (mem_addr >= 9'h1F0);
+    wire sel_uart_status = (mem_addr == 10'h3EE);
+    wire sel_uart_data   = (mem_addr == 10'h3EF);
+    wire sel_gpio        = (mem_addr >= 10'h3F0);
 
     always @(posedge clk) begin
         if (mem_we && !sel_uart_data && !sel_gpio)
