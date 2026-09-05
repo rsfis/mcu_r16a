@@ -1,0 +1,46 @@
+# info.yaml
+project:
+  title:        "Fiscion R16A"
+  author:       "Rian Fiscina"
+  discord:      ""                     # opcional
+  description:  "16-bit CPU with 512-word RAM, automatic boot via SPI flash, GPIO with PWM, and UART for programming/debugging."
+  language:     "Verilog"
+  clock_hz:     10000000                # ajuste para a frequencia real de operacao alvo (Hz)
+  tiles:        "1x1"                   # tamanho do tile; comece com 1x1 e so peca mais se nao couber
+  top_module:   "tt_um_rianfiscina"
+  source_files:
+    - "top.v"
+    - "cpu.v"
+    - "boot_ctrl.v"
+    - "gpio.v"
+    - "uart.v"
+    - "tt_um_rianfiscina.v"
+
+pinout:
+  ui_in:
+    - "prog_rx"
+    - "spi_miso"
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+    - ""
+  uo_out:
+    - "prog_tx"
+    - "spi_cs"
+    - "spi_sck"
+    - "spi_mosi"
+    - ""
+    - ""
+    - ""
+    - ""
+  uio:
+    - "gpio0"
+    - "gpio1"
+    - "gpio2"
+    - "gpio3"
+    - "gpio4"
+    - "gpio5"
+    - "gpio6"
+    - "gpio7"
