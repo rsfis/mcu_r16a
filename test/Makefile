@@ -1,24 +1,36 @@
-SIM ?= icarus
-TOPLEVEL_LANG ?= verilog
+SRCS = tb.v tt_um_rianfiscina.v top.v cpu.v boot_ctrl.v ext_ram_ctrl.v \
+       spi_byte_engine.v gpio.v uart.v spi_flash_model.v spi_sram_model.v
 
-SRC_DIR = $(PWD)/../src
+.PHONY: sim wave clean
 
-# ordem nao importa pro icarus, mas mantenha todos os modulos usados pela hierarquia
-PROJECT_SOURCES = \
-	uart.v \
-	boot_ctrl.v \
-	cpu.v \
-	gpio.v \
-	top.v \
-	tt_um_rianfiscina.v
+sim: wave.vcd
 
-ifeq ($(SIM), icarus)
-	VERILOG_SOURCES += $(PWD)/tb.v
-	VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
-	COMPILE_ARGS += -DSIM
-endif
+wave.vcd: $(SRCS) program.hex
+	iverilog -g2012 -o sim.out $(SRCS)
+	vvp sim.out
 
-TOPLEVEL := tb
-MODULE   := test
+wave: wave.vcd
+	gtkwave wave.vcd &
 
-include $(shell cocotb-config --makefiles)/Makefile.sim
+# ---- tb_standalone: testbench autocontido de proposito geral (nao usa
+# cocotb nem spi_flash_model.v/spi_sram_model.v -- tem os modelos de flash
+# e SRAM externas embutidos). Bom pra iterar rapido num programa novo.
+#
+#   make standalone                          -> usa program.hex, trace ligado
+#   make standalone HEX=meu_programa.hex      -> usa outro .hex
+#   make standalone ARGS=+notrace             -> desliga o trace por instrucao
+#
+STANDALONE_SRCS = ../src/tt_um_rianfiscina.v ../src/top.v ../src/cpu.v \
+                   ../src/boot_ctrl.v ../src/ext_ram_ctrl.v \
+                   ../src/spi_byte_engine.v ../src/gpio.v ../src/uart.v
+HEX ?= program.hex
+
+standalone: tb_standalone.v $(STANDALONE_SRCS) $(HEX)
+	iverilog -g2012 -o standalone.out -s tb_standalone tb_standalone.v $(STANDALONE_SRCS)
+	vvp standalone.out +hex=$(HEX) $(ARGS)
+
+standalone-wave: standalone
+	gtkwave tb_standalone.vcd &
+
+clean:
+	rm -f sim.out wave.vcd standalone.out tb_standalone.vcd

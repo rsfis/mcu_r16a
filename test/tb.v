@@ -1,129 +1,100 @@
-`default_nettype none
-`timescale 1ns / 1ps
-
-module tb_full ();
-
-    // ---- dump pro GTKWave ----
-    initial begin
-        $dumpfile("tb_full.vcd");
-        $dumpvars(0, tb_full);
-    end
-
-    // ---- clock e reset ----
+`timescale 1ns/1ps
+// tb.v — testbench de topo, clock real de 16 MHz (periodo = 62.5 ns).
+//
+// Liga o tt_um_rianfiscina aos dois modelos de SPI (flash de boot +
+// SRAM externa) exatamente como a placa de verdade faria: cada
+// dispositivo tem seu proprio barramento fisico, sem compartilhamento
+// (ver comentario em tt_um_rianfiscina.v).
+//
+//   uo_out[1]=spi_cs, uo_out[2]=spi_sck, uo_out[3]=spi_mosi  -> flash
+//   ui_in[1]=spi_miso                                        <- flash
+//
+//   uo_out[4]=sram_cs, uo_out[5]=sram_sck, uo_out[6]=sram_mosi -> sram
+//   ui_in[2]=sram_miso                                          <- sram
+//
+// Rode com:  make   (ver Makefile)
+module tb;
     reg clk = 0;
-    always #5 clk = ~clk;   // 16 MHz "nominal" (so importa se voce nao mexer no CLK_FREQ_HZ)
-
     reg rst_n = 0;
-    reg ena   = 1;
-    reg [7:0] ui_in  = 8'h01;  // bit0 = prog_rx ocioso em 1 (idle da UART)
-    reg [7:0] uio_in = 8'h00;
 
+    reg  [7:0] ui_in  = 8'h00;
     wire [7:0] uo_out;
+    reg  [7:0] uio_in = 8'h00;
     wire [7:0] uio_out;
     wire [7:0] uio_oe;
 
-    // ---- sinais SPI extraidos de uo_out (ver tt_um_rianfiscina.v) ----
-    // uo_out = {4'b0000, spi_mosi, spi_sck, spi_cs, prog_tx}
-    wire spi_mosi = uo_out[3];
-    wire spi_sck  = uo_out[2];
-    wire spi_cs   = uo_out[1];
-    wire prog_tx  = uo_out[0];
+    // ---- clock de 16 MHz de verdade: periodo = 1/16e6 s = 62.5 ns ----
+    always #31.25 clk = ~clk;   // meio periodo = 31.25 ns -> periodo total 62.5 ns
 
-    reg spi_miso_r = 1'b1;
-    // liga o miso simulado no ui_in[1], que o wrapper repassa pra top.spi_miso
-    wire [7:0] ui_in_drv = {ui_in[7:2], spi_miso_r, ui_in[0]};
+    // ---- reset: mantem em reset por alguns ciclos e solta ----
+    initial begin
+        rst_n = 0;
+        repeat (10) @(posedge clk);
+        rst_n = 1;
+    end
 
-    tt_um_rianfiscina user_project (
-        .ui_in  (ui_in_drv),
-        .uo_out (uo_out),
-        .uio_in (uio_in),
-        .uio_out(uio_out),
-        .uio_oe (uio_oe),
-        .ena    (ena),
-        .clk    (clk),
-        .rst_n  (rst_n)
+    // ---- barramento da flash de boot (fisicamente separado do da SRAM) ----
+    wire flash_cs   = uo_out[1];
+    wire flash_sck  = uo_out[2];
+    wire flash_mosi = uo_out[3];
+    wire flash_miso;
+
+    spi_flash_model #(.HEXFILE("program.hex")) u_flash (
+        .cs(flash_cs), .sck(flash_sck), .mosi(flash_mosi), .miso(flash_miso)
     );
 
-    // acelera a simulacao: reduz CLK_FREQ_HZ visto pela CPU pra DELAY
-    // nao levar 100k ciclos por "1 ms". Isso so afeta os calculos de
-    // tempo (DELAY / baud da UART) dentro do design, nao muda logica.
-    defparam tb_full.user_project.u_top.u_cpu.CLK_FREQ_HZ  = 1000;
-    defparam tb_full.user_project.u_top.u_uart.CLK_FREQ_HZ = 1000;
-    defparam tb_full.user_project.u_top.u_uart.BAUD        = 100;
+    // ---- barramento da SRAM externa (fisicamente separado do da flash) ----
+    wire sram_cs   = uo_out[4];
+    wire sram_sck  = uo_out[5];
+    wire sram_mosi = uo_out[6];
+    wire sram_miso;
 
-    // =====================================================================
-    // Modelo comportamental de flash SPI (modo 0), so implementa comando
-    // READ (0x03): 1 byte de comando + 3 bytes de endereco (ignorados,
-    // boot_ctrl sempre manda 0x000000) + depois transmite os bytes de
-    // program.hex a partir do offset 0, em sequencia, MSB primeiro.
-    // =====================================================================
-    reg [7:0] flash_mem [0:255];   // so precisa caber program.hex (146 bytes)
-    initial $readmemh("program.hex", flash_mem);
+    spi_sram_model u_sram (
+        .cs(sram_cs), .sck(sram_sck), .mosi(sram_mosi), .miso(sram_miso)
+    );
 
-    integer byte_idx;   // 0=cmd, 1..3=addr, 4+ = dados
-    integer bit_idx;    // 0..7 dentro do byte atual
-    integer data_ptr;   // indice em flash_mem durante a fase de dados
-    reg [7:0] out_byte;
-
-    // reinicia o "transaction state" toda vez que CS cai
-    always @(negedge spi_cs) begin
-        byte_idx  = 0;
-        bit_idx   = 0;
-        data_ptr  = 0;
-        out_byte  = flash_mem[0];
-        spi_miso_r = out_byte[7];
+    always @(*) begin
+        ui_in[0] = 1'b1;       // prog_rx ocioso (UART em idle = linha alta)
+        ui_in[1] = flash_miso;
+        ui_in[2] = sram_miso;
+        ui_in[7:3] = 5'b0;
     end
 
-    // amostra MOSI e desloca a saida MISO nas bordas de subida do SCK
-    always @(posedge spi_sck) begin
-        if (!spi_cs) begin
-            bit_idx = bit_idx + 1;
-            if (bit_idx == 8) begin
-                bit_idx = 0;
-                // se o byte que acabou de terminar ja era de payload,
-                // avanca o ponteiro para o PROXIMO byte de payload
-                if (byte_idx >= 4)
-                    data_ptr = data_ptr + 1;
-                byte_idx = byte_idx + 1;
-                if (byte_idx >= 4)
-                    out_byte = flash_mem[data_ptr];
-            end
-        end
-    end
+    // ---- DUT: CLK_FREQ_HZ = 16_000_000, batendo com o clock de verdade acima ----
+    tt_um_rianfiscina #(.CLK_FREQ_HZ(16_000_000)) dut (
+        .ui_in   (ui_in),
+        .uo_out  (uo_out),
+        .uio_in  (uio_in),
+        .uio_out (uio_out),
+        .uio_oe  (uio_oe),
+        .ena     (1'b1),
+        .clk     (clk),
+        .rst_n   (rst_n)
+    );
 
-    // atualiza a linha MISO na borda de descida (setup antes da proxima subida)
-    always @(negedge spi_sck) begin
-        if (!spi_cs)
-            spi_miso_r = out_byte[7 - bit_idx];
-    end
-
-    // =====================================================================
-    // Sequencia de reset
-    // =====================================================================
+    // ---- dump pro GTKWave ----
     initial begin
-        $display("t=%0t  iniciando simulacao (rst_n=0)", $time);
-        #50;
-        rst_n = 1;
-        $display("t=%0t  liberando reset (rst_n=1) -- comeca o boot via SPI", $time);
+        $dumpfile("wave.vcd");
+        $dumpvars(0, tb);
+        $timeformat(-9, 3, " ns", 12);  // deixa %t sempre em ns, 3 casas decimais
     end
 
-    // avisa quando o boot termina e a CPU comeca a executar o programa
-    wire boot_cpu_rst = user_project.u_top.boot_cpu_rst;
-    wire [15:0] boot_word_count = user_project.u_top.u_boot.word_count;
-    always @(negedge boot_cpu_rst) begin
-        $display("t=%0t  boot concluido (word_count=%0d palavras lidas da flash) -- CPU comeca a rodar",
-                  $time, boot_word_count);
-    end
-
-    // ---- tempo maximo de simulacao ----
-    // Generico: nao depende de nenhum pino, GPIO ou comportamento
-    // especifico de programa. A simulacao roda ate aqui e entao encerra
-    // sozinha -- sirva para qualquer program.hex carregado pela flash.
-    // 1_000_000_000 ns = 1 segundos (timescale 1ns/1ps deste arquivo).
+    // ---- roda tempo suficiente pra ver pelo menos 1 ciclo completo do
+    //      pisca-pisca (2 x 50 ms de delay + boot + overhead de instrucoes) ----
     initial begin
-        #1_000_000_000;
-        $display("t=%0t  fim do tempo de simulacao -- encerrando", $time);
+        #150_000_000;   // 150 ms de tempo simulado
+        $display("fim da simulacao (150 ms simulados)");
         $finish;
     end
 
+    // ---- print de log toda vez que o GPIO (uio_out) muda, pra
+    //      conferir o timing sem precisar abrir o GTKWave ----
+    real t_last_change = 0;
+    always @(uio_out) begin
+        // $time bruto e' contado na unidade local do timescale (1 ns
+        // aqui), entao 1 ms = 1e6 ns.
+        $display("t=%t (%.4f ms) uio_out=0x%02x  (delta desde a ultima mudanca: %.4f ms)",
+                  $time, $time/1.0e6, uio_out, ($time - t_last_change)/1.0e6);
+        t_last_change = $time;
+    end
 endmodule

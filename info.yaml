@@ -1,14 +1,24 @@
-# info.yaml
+# Tiny Tapeout project information
 project:
-  title:        "Fiscion R16A"
-  author:       "Rian Fiscina"
-  discord:      ""                     # opcional
-  description:  "16-bit CPU with 512-word RAM, automatic boot via SPI flash, GPIO with PWM, and UART for programming/debugging."
-  language:     "Verilog"
-  clock_hz:     10000000                # ajuste para a frequencia real de operacao alvo (Hz)
-  tiles:        "1x1"                   # tamanho do tile; comece com 1x1 e so peca mais se nao couber
-  top_module:   "tt_um_rianfiscina"
+  title:        "Fiscion R16A"      # Project title
+  author:       "Rian Fiscina"      # Your name
+  discord:      ""                  # Your discord username, for communication and automatically assigning you a Tapeout role (optional)
+  description:  "16-bit CPU with 1024-word external SPI SRAM (Microchip 23LCV04M), automatic boot via external SPI flash (Winbond W25Q80), GPIO with PWM, and UART for programming/debugging."
+  language:     "Verilog" # other examples include SystemVerilog, Amaranth, VHDL, etc
+  clock_hz:     10000000       # Clock frequency in Hz (or 0 if not applicable)
+
+  # How many tiles your design occupies? A single tile is about 167x108 uM.
+  tiles: "1x1"          # Valid values: 1x1, 1x2, 2x2, 3x2, 4x2, 6x2 or 8x2
+
+  # Your top module name must start with "tt_um_". Make it unique by including your github username:
+  top_module:  "tt_um_rianfiscina"
+
+  # List your project's source files here.
+  # Source files must be in ./src and you must list each source file separately, one per line.
+  # Don't forget to also update `PROJECT_SOURCES` in test/Makefile.
   source_files:
+    - "spi_byte_engine.v"
+    - "ext_ram_ctrl.v"
     - "top.v"
     - "cpu.v"
     - "boot_ctrl.v"
@@ -16,31 +26,38 @@ project:
     - "uart.v"
     - "tt_um_rianfiscina.v"
 
+# The pinout of your project. Leave unused pins blank. DO NOT delete or add any pins.
+# This section is for the datasheet/website. Use descriptive names (e.g., RX, TX, MOSI, SCL, SEG_A, etc.).
 pinout:
-  ui_in:
-    - "prog_rx"
-    - "spi_miso"
-    - ""
-    - ""
-    - ""
-    - ""
-    - ""
-    - ""
-  uo_out:
-    - "prog_tx"
-    - "spi_cs"
-    - "spi_sck"
-    - "spi_mosi"
-    - ""
-    - ""
-    - ""
-    - ""
-  uio:
-    - "gpio0"
-    - "gpio1"
-    - "gpio2"
-    - "gpio3"
-    - "gpio4"
-    - "gpio5"
-    - "gpio6"
-    - "gpio7"
+  # Inputs
+  ui[0]: "prog_rx"
+  ui[1]: "spi_miso"
+  ui[2]: "sram_miso"
+  ui[3]: ""
+  ui[4]: ""
+  ui[5]: ""
+  ui[6]: ""
+  ui[7]: ""
+
+  # Outputs
+  uo[0]: "prog_tx"
+  uo[1]: "spi_cs"
+  uo[2]: "spi_sck"
+  uo[3]: "spi_mosi"
+  uo[4]: "sram_cs"
+  uo[5]: "sram_sck"
+  uo[6]: "sram_mosi"
+  uo[7]: ""
+
+  # Bidirectional pins
+  uio[0]: "gpio0"
+  uio[1]: "gpio1"
+  uio[2]: "gpio2"
+  uio[3]: "gpio3"
+  uio[4]: "gpio4"
+  uio[5]: "gpio5"
+  uio[6]: "gpio6"
+  uio[7]: "gpio7"
+
+# Do not change!
+yaml_version: 6

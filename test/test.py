@@ -4,6 +4,15 @@ Testbench cocotb para o sistema "Modo Macaco" (cpu + boot_ctrl + uart + gpio).
 Peca central: SEM um modelo de flash SPI respondendo a boot_ctrl, o sinal
 cpu_rst nunca vai a 0 e a CPU fica presa em reset para sempre. Por isso o
 primeiro teste sobe um "flash" fake em background antes de liberar o rst_n.
+
+NOVO (versao com SRAM externa): a RAM tambem deixou de ser interna -- agora
+e' a SRAM SPI externa (Microchip 23LCV04M), acessada por ext_ram_ctrl.v em
+TODA busca de instrucao e TODO acesso a dado. Sem um modelo dela respondendo
+em ui_in[UI_SRAM_MISO], a CPU le lixo (sempre 0, ja que ui_in nao-dirigido
+fica em 0 no cocotb) em vez do programa de verdade -- e' por isso que,
+antes desta mudanca, o boot ate' terminava mas a CPU nao executava nada de
+util (tudo virava opcode 0x00 = NOP). Por isso "iniciar_e_bootar" agora
+tambem sobe um "spi_sram_model" em background, igual ja fazia com a flash.
 """
 
 import cocotb
@@ -14,8 +23,12 @@ UO_PROG_TX = 0
 UO_SPI_CS = 1
 UO_SPI_SCK = 2
 UO_SPI_MOSI = 3
+UO_SRAM_CS = 4
+UO_SRAM_SCK = 5
+UO_SRAM_MOSI = 6
 UI_PROG_RX = 0
 UI_SPI_MISO = 1
+UI_SRAM_MISO = 2
 
 
 def valor_seguro(sig):
@@ -42,7 +55,7 @@ def montar_imagem_flash(palavras):
 def montar_programa():
     """Programa mínimo pra 'Modo Macaco':
         LOADI R0, 0x00FF      ; mascara: todos os 8 GPIOs como saida
-        STORE [0x1F0], R0     ; GPIO_DIR = R0
+        STORE [0x3F0], R0     ; GPIO_DIR = R0
         LOADI R1, 0x00AB      ; valor de teste
         OUT R1                ; GPIO_DATA = R1  (opcode 0x07 grava direto no endereco)
         HALT
@@ -54,7 +67,7 @@ def montar_programa():
 
     prog = []
     prog += instr(0x12, 0, 0, 0x00FF)   # LOADI R0, 0x00FF
-    prog += instr(0x02, 0, 0, 0x01F0)   # STORE [0x1F0], R0
+    prog += instr(0x02, 0, 0, 0x03F0)   # STORE [0x3F0], R0
     prog += instr(0x12, 1, 0, 0x00AB)   # LOADI R1, 0x00AB
     prog += instr(0x07, 0, 1, 0x0000)   # OUT R1
     prog += instr(0x0F, 0, 0, 0x0000)   # HALT
@@ -109,8 +122,77 @@ async def spi_flash_model(dut, imagem_bytes):
         dut.ui_in[UI_SPI_MISO].value = proximo_bit
 
 
-async def iniciar_e_bootar(dut, imagem_bytes, ciclos_pos_boot=700):
-    """Sobe clock, reset, o modelo de flash, e espera o boot terminar."""
+async def spi_sram_model(dut):
+    """Modelo de SRAM SPI (Microchip 23LCV04M-like), modo 0 (CPOL=0, CPHA=0),
+    MSB primeiro. Implementa READ (0x03) e WRITE (0x02) de verdade, com uma
+    memoria interna de 2048 bytes (cobre as 1024 palavras de 16 bits do
+    projeto -- so os 11 bits baixos do endereco de 3 bytes sao usados).
+
+    Full-duplex: amostra MOSI na borda de SUBIDA do sck (mesmo instante em
+    que o mestre -- spi_byte_engine.v -- amostra o MISO que devolvemos),
+    e atualiza o proximo bit de MISO na borda de DESCIDA (setup antes da
+    proxima subida), espelhando exatamente a temporizacao do motor SPI
+    real usado por ext_ram_ctrl.v/boot_ctrl.v.
+    """
+    ram_bus = dut.user_project.u_top  # sram_cs/sram_sck/sram_mosi sao portas de top.v
+    mem = bytearray(2048)
+    st = {"bit": 0, "byte": 0, "cmd": 0, "addr": 0, "shift": 0, "out": 0}
+
+    async def watch_cs():
+        while True:
+            await FallingEdge(ram_bus.sram_cs)
+            st["bit"] = 0
+            st["byte"] = 0
+            st["out"] = 0
+
+    cocotb.start_soon(watch_cs())
+    dut.ui_in[UI_SRAM_MISO].value = 0
+
+    while True:
+        await RisingEdge(ram_bus.sram_sck)
+        if ram_bus.sram_cs.value == 1:
+            continue
+        bit = int(ram_bus.sram_mosi.value)
+        st["shift"] = ((st["shift"] << 1) | bit) & 0xFF
+        st["bit"] += 1
+        if st["bit"] == 8:
+            st["bit"] = 0
+            b, v = st["byte"], st["shift"]
+            if b == 0:
+                st["cmd"] = v
+            elif b == 1:
+                st["addr"] = (st["addr"] & 0x00FFFF) | (v << 16)
+            elif b == 2:
+                st["addr"] = (st["addr"] & 0xFF00FF) | (v << 8)
+            elif b == 3:
+                st["addr"] = (st["addr"] & 0xFFFF00) | v
+                if st["cmd"] == 0x03:
+                    st["out"] = mem[st["addr"] & 0x7FF]
+            else:
+                i = b - 4
+                if st["cmd"] == 0x02:
+                    mem[(st["addr"] + i) & 0x7FF] = v
+                elif st["cmd"] == 0x03:
+                    st["out"] = mem[(st["addr"] + i) & 0x7FF]
+            st["byte"] += 1
+
+        await FallingEdge(ram_bus.sram_sck)
+        if ram_bus.sram_cs.value == 1:
+            continue
+        next_bit = (st["out"] >> (7 - st["bit"])) & 1
+        dut.ui_in[UI_SRAM_MISO].value = next_bit
+
+
+async def iniciar_e_bootar(dut, imagem_bytes, ciclos_pos_boot=8000):
+    """Sobe clock, reset, os modelos de flash e SRAM, e espera o boot terminar.
+
+    ciclos_pos_boot subiu bastante em relacao a versao com RAM interna
+    (era 700): agora TODO acesso a memoria e' uma transacao SPI completa
+    (~96+ ciclos: 1 cmd + 3 endereco + 2 dados, 16 ciclos/byte), entao boot
+    + poucas instrucoes ja soma varios milhares de ciclos. 8000 e' uma
+    estimativa com folga, nao um numero medido em simulacao -- ajuste se
+    o seu programa for maior ou se o teste ainda cortar cedo demais.
+    """
     cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
 
     dut.ena.value = 1
@@ -118,14 +200,16 @@ async def iniciar_e_bootar(dut, imagem_bytes, ciclos_pos_boot=700):
     dut.ui_in[UI_PROG_RX].value = 1  # UART ociosa em nivel alto
     dut.uio_in.value = 0
     dut.rst_n.value = 0
-    await Timer(1, unit="ns")  # deixa os regs iniciais assentarem antes do modelo de flash ler
+    await Timer(1, unit="ns")  # deixa os regs iniciais assentarem antes dos modelos lerem
 
     cocotb.start_soon(spi_flash_model(dut, imagem_bytes))
+    cocotb.start_soon(spi_sram_model(dut))
 
     await ClockCycles(dut.clk, 10)
     dut.rst_n.value = 1
 
-    # tempo suficiente pro boot (26 bytes * 16 ciclos/byte) + a CPU rodar o programa
+    # tempo suficiente pro boot (agora envolvendo escritas na SRAM externa
+    # tambem) + a CPU rodar o programa
     await ClockCycles(dut.clk, ciclos_pos_boot)
 
 
